@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\UserController;
 
 // Web Routes
 Route::get('/', [ProductController::class, 'index'])->name('products.index');
@@ -14,4 +15,5 @@ Route::delete('/products/{id}', [ProductController::class, 'destroy'])->name('pr
 Route::prefix('api')->group(function () {
     Route::get('/products', [ProductController::class, 'apiIndex']);
     Route::get('/products/{id}', [ProductController::class, 'apiShow']);
+    Route::apiResource('users', UserController::class);
 });

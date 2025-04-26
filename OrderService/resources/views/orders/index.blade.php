@@ -31,8 +31,10 @@
                 <form action="{{ route('orders.store') }}" method="POST">
                     @csrf
                     <div class="mb-3">
-                        <label class="form-label">User ID</label>
-                        <input type="number" class="form-control" name="user_id" required>
+                        <label class="form-label">User</label>
+                        <select class="form-control" name="user_id" id="userSelect" required>
+                            <option value="">Select User</option>
+                        </select>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Shipping Address</label>
@@ -153,15 +155,39 @@
         // Load products when page loads
         $(document).ready(function() {
             loadProducts();
+            loadUsers();
+            setupEventListeners();
         });
 
         // Load products from ProductService
         function loadProducts() {
-            $.get('http://localhost:8002/api/products', function(response) {
+            $.get('{{ route('products.get') }}', function(response) {
+                if (response.error) {
+                    alert('Failed to load products: ' + response.error);
+                    return;
+                }
                 products = response;
                 updateProductSelects();
             }).fail(function() {
                 alert('Failed to load products from ProductService');
+            });
+        }
+
+        // Load users from UserService
+        function loadUsers() {
+            $.get('{{ route('users.get') }}', function(response) {
+                if (response.error) {
+                    alert('Failed to load users: ' + response.error);
+                    return;
+                }
+                const userSelect = $('#userSelect');
+                userSelect.empty().append('<option value="">Select User</option>');
+                const users = response.data || response;
+                users.forEach(user => {
+                    userSelect.append(`<option value="${user.id}">${user.name} (${user.email})</option>`);
+                });
+            }).fail(function() {
+                alert('Failed to load users from UserService');
             });
         }
 
@@ -171,10 +197,56 @@
                 const select = $(this);
                 if (select.find('option').length <= 1) {
                     products.forEach(product => {
-                        select.append(`<option value="${product.id}" data-price="${product.price}">${product.name} - Stock: ${product.stock}</option>`);
+                        select.append(`<option value="${product.id}" data-price="${product.price}" data-stock="${product.stock}">${product.name} - Rp ${product.price.toLocaleString()} (Stock: ${product.stock})</option>`);
                     });
                 }
             });
+        }
+
+        // Setup event listeners for product selection and quantity changes
+        function setupEventListeners() {
+            $(document).on('change', '.product-select', function() {
+                const selectedOption = $(this).find('option:selected');
+                const price = selectedOption.data('price');
+                const stock = selectedOption.data('stock');
+                const quantityInput = $(this).closest('.row').find('.quantity-input');
+                
+                // Update price input
+                $(this).closest('.row').find('.price-input').val(price);
+                
+                // Update max quantity based on stock
+                quantityInput.attr('max', stock);
+                
+                // Calculate subtotal
+                calculateSubtotal($(this).closest('.row'));
+            });
+
+            $(document).on('input', '.quantity-input', function() {
+                calculateSubtotal($(this).closest('.row'));
+            });
+        }
+
+        // Calculate subtotal for a row
+        function calculateSubtotal(row) {
+            const quantity = parseInt(row.find('.quantity-input').val()) || 0;
+            const price = parseFloat(row.find('.price-input').val()) || 0;
+            const subtotal = quantity * price;
+            
+            row.find('.subtotal-display').val('Rp ' + subtotal.toLocaleString());
+            row.find('.subtotal-input').val(subtotal);
+            
+            calculateTotal();
+        }
+
+        // Calculate total amount
+        function calculateTotal() {
+            let total = 0;
+            $('.subtotal-input').each(function() {
+                total += parseFloat($(this).val()) || 0;
+            });
+            
+            $('#totalAmount').val('Rp ' + total.toLocaleString());
+            $('#totalAmountInput').val(total);
         }
 
         // Add new order item row
@@ -201,95 +273,10 @@
             itemCount++;
         }
 
-        // Calculate totals when product or quantity changes
-        $(document).on('change', '.product-select, .quantity-input', function() {
-            const row = $(this).closest('.order-item');
-            const productSelect = row.find('.product-select');
-            const quantityInput = row.find('.quantity-input');
-            const subtotalDisplay = row.find('.subtotal-display');
-            const priceInput = row.find('.price-input');
-            const subtotalInput = row.find('.subtotal-input');
-
-            if (productSelect.val()) {
-                const selectedOption = productSelect.find('option:selected');
-                const price = parseFloat(selectedOption.data('price'));
-                const quantity = parseInt(quantityInput.val()) || 0;
-                const subtotal = price * quantity;
-
-                priceInput.val(price);
-                subtotalDisplay.val(`Rp ${formatNumber(subtotal)}`);
-                subtotalInput.val(subtotal);
-            } else {
-                subtotalDisplay.val('');
-                priceInput.val('');
-                subtotalInput.val('');
-            }
-
-            updateTotalAmount();
-        });
-
-        // Update total amount
-        function updateTotalAmount() {
-            let total = 0;
-            $('.subtotal-input').each(function() {
-                total += parseFloat($(this).val()) || 0;
-            });
-            $('#totalAmount').val(`Rp ${formatNumber(total)}`);
-            $('#totalAmountInput').val(total);
-        }
-
-        // Format number with thousand separator
-        function formatNumber(num) {
-            return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-        }
-
         // View order details
         function viewOrderDetails(orderId) {
             $.get(`/orders/${orderId}`, function(response) {
-                let html = `
-                    <div class="mb-3">
-                        <h6>Order Information</h6>
-                        <p>Status: ${response.status}</p>
-                        <p>Payment Method: ${response.payment_method}</p>
-                        <p>Payment Status: ${response.payment_status}</p>
-                        <p>Shipping Address: ${response.shipping_address}</p>
-                    </div>
-                    <div>
-                        <h6>Order Items</h6>
-                        <table class="table">
-                            <thead>
-                                <tr>
-                                    <th>Product</th>
-                                    <th>Quantity</th>
-                                    <th>Price</th>
-                                    <th>Subtotal</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                `;
-                
-                response.items.forEach(item => {
-                    const product = products.find(p => p.id === item.product_id);
-                    html += `
-                        <tr>
-                            <td>${product ? product.name : `Product #${item.product_id}`}</td>
-                            <td>${item.quantity}</td>
-                            <td>Rp ${formatNumber(item.price)}</td>
-                            <td>Rp ${formatNumber(item.quantity * item.price)}</td>
-                        </tr>
-                    `;
-                });
-
-                html += `
-                            </tbody>
-                        </table>
-                        <div class="text-end">
-                            <strong>Total: Rp ${formatNumber(response.total_amount)}</strong>
-                        </div>
-                    </div>
-                `;
-
-                $('#orderDetailsContent').html(html);
+                $('#orderDetailsContent').html(response);
                 $('#orderDetailsModal').modal('show');
             });
         }
