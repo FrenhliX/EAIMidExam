@@ -1,0 +1,2 @@
+# EAIMidExam
+Tugas UTS EAI
